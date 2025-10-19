@@ -11,8 +11,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib
 import dxfwrite
 from dxfwrite import DXFEngine as dxf
-
-# 设置中文显示
 matplotlib.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 matplotlib.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
 
