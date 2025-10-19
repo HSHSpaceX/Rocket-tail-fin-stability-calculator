@@ -3,7 +3,7 @@
 大家在使用Openrocket绘制火箭的基本模型图时，常常会不断调整尾翼的形状，计算出适合自己火箭稳定性的尾翼，但这种方法十分麻烦，并且Openrocket不支持直接导出pxf格式文件用于3D打印模型。因此我用Python开发语言为大家制作了一个火箭尾翼稳定计算工具，该软件支持火箭的重量分布提供尾翼安装位置等提示建议，并且会通过绘制发射抛物线来简单模拟不同尾翼对火箭飞行轨迹的影响，以及偏离垂直发射高度的度数，并且该图纸支持PNG格式导出，这是该软件的基本信息。软件界面使用T K库GUI页面导出。下面是软件安装包打开即可使用。
 
 # python原代码
-import tkinter as tk
+ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +11,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib
 import dxfwrite
 from dxfwrite import DXFEngine as dxf
+
 matplotlib.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 matplotlib.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
 
@@ -440,7 +441,7 @@ class RocketStabilityCalculator:
         self.draw_wing()
         self.update_plot()
 
-# 主程序
+ #主程序
 if __name__ == "__main__":
     root = tk.Tk()
     app = RocketStabilityCalculator(root)
