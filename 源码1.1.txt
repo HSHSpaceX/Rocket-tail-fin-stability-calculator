@@ -1,0 +1,732 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import numpy as np
+import dxfwrite
+from dxfwrite import DXFEngine as dxf
+
+class RocketStabilityCalculator:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("火箭尾翼稳定性计算器HSH编写")
+        self.root.geometry("1400x800")  # 调整窗口尺寸
+        
+        # 输入变量
+        self.length_var = tk.DoubleVar(value=500.0)  # 厘米
+        self.front_weight_var = tk.DoubleVar(value=10000.0)  # 克
+        self.mid_weight_var = tk.DoubleVar(value=20000.0)    # 克
+        self.rear_weight_var = tk.DoubleVar(value=15000.0)   # 克
+        self.wind_speed_var = tk.DoubleVar(value=5.0)
+        self.launch_angle_var = tk.DoubleVar(value=45.0)
+        self.target_altitude_var = tk.DoubleVar(value=1000.0)
+        self.wing_shape_var = tk.StringVar(value="梯形")
+        self.wing_count_var = tk.IntVar(value=4)
+        self.root_chord_var = tk.DoubleVar(value=30.0)  # 厘米
+        self.tip_chord_var = tk.DoubleVar(value=15.0)   # 厘米
+        self.wing_span_var = tk.DoubleVar(value=40.0)   # 厘米
+        self.wing_position_var = tk.DoubleVar(value=0.8)
+        
+        # 新增：最大高度估算参数
+        self.water_velocity_var = tk.DoubleVar(value=30.0)  # 喷射水速度 v_e (m/s)
+        self.drag_coeff_var = tk.DoubleVar(value=0.75)      # 阻力系数 C_d
+        self.air_density_var = tk.DoubleVar(value=1.225)    # 空气密度 ρ (kg/m³)
+        self.cross_area_var = tk.DoubleVar(value=0.0314)    # 火箭截面积 A (m²) - 直径20cm的圆
+        self.initial_mass_var = tk.DoubleVar(value=45.0)    # 初始质量 m0 (kg)
+        self.final_mass_var = tk.DoubleVar(value=25.0)      # 最终质量 m1 (kg)
+        self.gravity_var = tk.DoubleVar(value=9.81)         # 重力加速度 g (m/s²)
+        
+        # 新增：火箭稳定性相关参数
+        self.diameter_var = tk.DoubleVar(value=20.0)  # 火箭直径 (cm)
+        self.nose_length_var = tk.DoubleVar(value=80.0)  # 鼻锥长度 (cm)
+        self.nose_shape_var = tk.StringVar(value="锥形")  # 鼻锥形状
+        
+        # 创建主框架
+        self.main_frame = ttk.Frame(root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 配置网格权重
+        self.main_frame.columnconfigure(0, weight=1)
+        self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.rowconfigure(0, weight=1)
+        self.main_frame.rowconfigure(1, weight=0)
+        self.main_frame.rowconfigure(2, weight=0)
+        
+        # 输入区域
+        self.create_input_section()
+        
+        # 结果区域
+        self.create_output_section()
+        
+        # 新增：最大高度计算区域（T区域）
+        self.create_max_height_section()
+        
+        # 底部按钮
+        self.create_button_section()
+    
+    def create_input_section(self):
+        input_frame = ttk.LabelFrame(self.main_frame, text="火箭参数")
+        input_frame.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
+        
+        # 调整输入框大小
+        entry_width = 15
+        
+        # 火箭基本参数
+        ttk.Label(input_frame, text="火箭总长 (cm):").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.length_var, width=entry_width).grid(row=0, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="火箭直径 (cm):").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.diameter_var, width=entry_width).grid(row=1, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="鼻锥长度 (cm):").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.nose_length_var, width=entry_width).grid(row=2, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="鼻锥形状:").grid(row=3, column=0, sticky="w", pady=3)
+        nose_shape_combobox = ttk.Combobox(input_frame, textvariable=self.nose_shape_var, 
+                                          values=["锥形", "抛物线形", "半球形", "尖锥形", "椭圆形"],
+                                          width=entry_width-2)
+        nose_shape_combobox.grid(row=3, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="前段重量 (g):").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.front_weight_var, width=entry_width).grid(row=4, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="中段重量 (g):").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.mid_weight_var, width=entry_width).grid(row=5, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="后段重量 (g):").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.rear_weight_var, width=entry_width).grid(row=6, column=1, pady=3)
+        
+        # 环境参数
+        ttk.Label(input_frame, text="风速 (m/s):").grid(row=7, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.wind_speed_var, width=entry_width).grid(row=7, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="发射角度 (度):").grid(row=8, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.launch_angle_var, width=entry_width).grid(row=8, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="目标高度 (m):").grid(row=9, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.target_altitude_var, width=entry_width).grid(row=9, column=1, pady=3)
+        
+        # 尾翼参数
+        ttk.Label(input_frame, text="尾翼形状:").grid(row=10, column=0, sticky="w", pady=3)
+        shape_combobox = ttk.Combobox(input_frame, textvariable=self.wing_shape_var, 
+                                    values=["矩形", "梯形", "三角形", "椭圆", "后掠"],
+                                    width=entry_width-2)
+        shape_combobox.grid(row=10, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="尾翼数量:").grid(row=11, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.wing_count_var, width=entry_width).grid(row=11, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="根部弦长 (cm):").grid(row=12, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.root_chord_var, width=entry_width).grid(row=12, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="尖部弦长 (cm):").grid(row=13, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.tip_chord_var, width=entry_width).grid(row=13, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="翼展 (cm):").grid(row=14, column=0, sticky="w", pady=3)
+        ttk.Entry(input_frame, textvariable=self.wing_span_var, width=entry_width).grid(row=14, column=1, pady=3)
+        
+        ttk.Label(input_frame, text="安装位置 (%):").grid(row=15, column=0, sticky="w", pady=3)
+        ttk.Scale(input_frame, from_=0, to=100, variable=self.wing_position_var, 
+                 orient=tk.HORIZONTAL, length=180).grid(row=15, column=1, pady=3)
+        
+        # 计算按钮
+        ttk.Button(input_frame, text="计算稳定性", command=self.calculate_stability, 
+                  width=20).grid(row=16, column=0, columnspan=2, pady=15)
+    
+    def create_output_section(self):
+        output_frame = ttk.LabelFrame(self.main_frame, text="计算结果")
+        output_frame.grid(row=0, column=1, padx=15, pady=15, sticky="nsew")
+        
+        # 结果文本区域 - 增大尺寸
+        self.result_text = tk.Text(output_frame, height=28, width=60, font=("宋体", 10))
+        scrollbar = ttk.Scrollbar(output_frame, command=self.result_text.yview)
+        self.result_text.config(yscrollcommand=scrollbar.set)
+        
+        self.result_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        
+        self.result_text.insert(tk.END, "计算结果将显示在这里...")
+        
+        # 尾翼示意图框架
+        wing_frame = ttk.LabelFrame(output_frame, text="尾翼示意图")
+        wing_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 尾翼示意图
+        self.wing_canvas = tk.Canvas(wing_frame, width=300, height=200, bg="white", highlightthickness=1, highlightbackground="gray")
+        self.wing_canvas.pack(pady=10)
+    
+    def create_max_height_section(self):
+        """创建最大高度计算区域（T区域）"""
+        height_frame = ttk.LabelFrame(self.main_frame, text="最大高度估算（含阻力）")
+        height_frame.grid(row=1, column=0, columnspan=2, padx=15, pady=10, sticky="ew")
+        
+        # 调整输入框大小
+        entry_width = 12
+        
+        # 使用网格布局
+        row = 0
+        
+        # 第一行
+        ttk.Label(height_frame, text="喷射水速度 v_e (m/s):").grid(row=row, column=0, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.water_velocity_var, width=entry_width).grid(row=row, column=1, padx=8, pady=4)
+        
+        ttk.Label(height_frame, text="阻力系数 C_d:").grid(row=row, column=2, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.drag_coeff_var, width=entry_width).grid(row=row, column=3, padx=8, pady=4)
+        
+        ttk.Label(height_frame, text="空气密度 ρ (kg/m³):").grid(row=row, column=4, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.air_density_var, width=entry_width).grid(row=row, column=5, padx=8, pady=4)
+        
+        row += 1
+        
+        # 第二行
+        ttk.Label(height_frame, text="火箭截面积 A (m²):").grid(row=row, column=0, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.cross_area_var, width=entry_width).grid(row=row, column=1, padx=8, pady=4)
+        
+        ttk.Label(height_frame, text="初始质量 m0 (kg):").grid(row=row, column=2, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.initial_mass_var, width=entry_width).grid(row=row, column=3, padx=8, pady=4)
+        
+        ttk.Label(height_frame, text="最终质量 m1 (kg):").grid(row=row, column=4, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.final_mass_var, width=entry_width).grid(row=row, column=5, padx=8, pady=4)
+        
+        row += 1
+        
+        # 第三行
+        ttk.Label(height_frame, text="重力加速度 g (m/s²):").grid(row=row, column=0, sticky="w", padx=8, pady=4)
+        ttk.Entry(height_frame, textvariable=self.gravity_var, width=entry_width).grid(row=row, column=1, padx=8, pady=4)
+        
+        # 计算按钮
+        ttk.Button(height_frame, text="计算最大高度", command=self.calculate_max_height, 
+                  width=15).grid(row=row, column=2, padx=30, pady=4)
+        
+        # 结果显示
+        self.height_result_label = ttk.Label(height_frame, text="最大高度: 未计算", 
+                                            font=("", 11, "bold"), foreground="blue")
+        self.height_result_label.grid(row=row, column=3, columnspan=3, padx=8, pady=4, sticky="w")
+        
+        # 添加公式说明
+        formula_label = ttk.Label(height_frame, 
+                                 text="使用公式: h_max ≈ (v_e²/(2g)) * (1/(1+(C_d*ρ*A)/(2mg))) * ln(m0/m1)", 
+                                 font=("", 9), foreground="darkgreen")
+        formula_label.grid(row=row+1, column=0, columnspan=6, pady=8, sticky="w")
+    
+    def create_button_section(self):
+        button_frame = ttk.Frame(self.main_frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=15)
+        
+        ttk.Button(button_frame, text="导出尾翼DXF", command=self.export_dxf, 
+                  width=15).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="重置参数", command=self.reset_parameters, 
+                  width=15).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="关于", command=self.show_about, 
+                  width=15).pack(side=tk.RIGHT, padx=10)
+    
+    def show_about(self):
+        """显示关于信息弹窗"""
+        about_text = """
+火箭尾翼稳定性计算器
+
+版本: V1.1
+作者: HSH
+
+注意事项:
+1. 计算结果仅供参考，实际设计需进行实物测试
+2. 建议在安全环境下进行火箭发射实验
+3. 遵守当地法律法规和安全规定
+
+联系方式: 如有问题或建议，请联系开发者
+HSH0730@126.com
+
+GitHub项目链接：
+https://github.com/HSHSpaceX/Rocket-tail-fin-stability-calculator
+欢迎各位一同开发
+
+更新日志:
+v1.1: 优化稳定性计算，增加鼻锥参数,水火箭发射高度
+v1.0: 基础计算
+    """    
+        # 创建自定义弹窗
+        about_window = tk.Toplevel(self.root)
+        about_window.title("关于 ")
+        about_window.geometry("500x600")
+        about_window.resizable(False, False)
+        
+        # 设置弹窗图标和位置
+        about_window.transient(self.root)
+        about_window.grab_set()
+        
+        # 中心显示
+        window_width = 500
+        window_height = 600
+        screen_width = about_window.winfo_screenwidth()
+        screen_height = about_window.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        about_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # 创建标题标签
+        title_label = tk.Label(about_window, text="火箭尾翼稳定性计算器", 
+                              font=("微软雅黑", 16, "bold"))
+        title_label.pack(pady=15)
+        
+        # 创建副标题
+        subtitle_label = tk.Label(about_window, text="版本V1.1", 
+                                 font=("微软雅黑", 12))
+        subtitle_label.pack(pady=5)
+        
+        # 创建分隔线
+        separator = ttk.Separator(about_window, orient='horizontal')
+        separator.pack(fill='x', padx=20, pady=10)
+        
+        # 创建文本框架
+        text_frame = tk.Frame(about_window)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # 创建文本区域
+        about_text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("微软雅黑", 10))
+        about_text_widget.insert(tk.END, about_text)
+        about_text_widget.config(state=tk.DISABLED)  # 设置为只读
+        
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(text_frame, command=about_text_widget.yview)
+        about_text_widget.config(yscrollcommand=scrollbar.set)
+        
+        about_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 创建关闭按钮
+        close_button = ttk.Button(about_window, text="关闭", 
+                                 command=about_window.destroy, width=20)
+        close_button.pack(pady=20)
+        
+        # 绑定ESC键关闭窗口
+        about_window.bind('<Escape>', lambda e: about_window.destroy())
+    
+    def calculate_max_height(self):
+        """计算含阻力的最大高度"""
+        try:
+            # 获取输入值
+            v_e = self.water_velocity_var.get()
+            C_d = self.drag_coeff_var.get()
+            rho = self.air_density_var.get()
+            A = self.cross_area_var.get()
+            m0 = self.initial_mass_var.get()
+            m1 = self.final_mass_var.get()
+            g = self.gravity_var.get()
+            
+            # 计算质量比
+            mass_ratio = m0 / m1
+            if mass_ratio <= 1:
+                raise ValueError("初始质量必须大于最终质量")
+            
+            # 计算阻力系数
+            resistance_factor = 1 + (C_d * rho * A) / (2 * m0 * g)
+            
+            # 计算最大高度（使用公式）
+            h_max = (v_e**2 / (2 * g)) * (1 / resistance_factor) * np.log(mass_ratio)
+            
+            # 更新结果标签
+            self.height_result_label.config(text=f"最大高度: {h_max:.2f} m")
+            
+            # 在结果文本框中显示
+            self.result_text.insert(tk.END, f"\n\n=== 最大高度估算 ===\n")
+            self.result_text.insert(tk.END, f"计算最大高度: {h_max:.2f} m\n")
+            self.result_text.insert(tk.END, f"喷射水速度: {v_e:.1f} m/s\n")
+            self.result_text.insert(tk.END, f"阻力系数: {C_d:.3f}\n")
+            self.result_text.insert(tk.END, f"空气密度: {rho:.3f} kg/m³\n")
+            self.result_text.insert(tk.END, f"火箭截面积: {A:.4f} m²\n")
+            self.result_text.insert(tk.END, f"初始质量: {m0:.1f} kg\n")
+            self.result_text.insert(tk.END, f"最终质量: {m1:.1f} kg\n")
+            self.result_text.insert(tk.END, f"重力加速度: {g:.2f} m/s²\n")
+            self.result_text.insert(tk.END, f"质量比: {mass_ratio:.3f}\n")
+            self.result_text.insert(tk.END, f"阻力因子: {resistance_factor:.3f}\n")
+            self.result_text.see(tk.END)  # 滚动到最新内容
+            
+            return h_max
+            
+        except ValueError as ve:
+            messagebox.showerror("输入错误", f"参数错误: {str(ve)}")
+        except Exception as e:
+            messagebox.showerror("计算错误", f"计算最大高度时发生错误: {str(e)}")
+    
+    def calculate_stability(self):
+        """优化后的稳定性计算"""
+        try:
+            # 获取输入值（转换为米）
+            L = self.length_var.get() / 100  # 厘米转米
+            D = self.diameter_var.get() / 100  # 厘米转米
+            nose_length = self.nose_length_var.get() / 100  # 厘米转米
+            nose_shape = self.nose_shape_var.get()
+            
+            # 质量转换
+            w_front = self.front_weight_var.get() / 1000  # 克转千克
+            w_mid = self.mid_weight_var.get() / 1000      # 克转千克
+            w_rear = self.rear_weight_var.get() / 1000    # 克转千克
+            
+            wind_speed = self.wind_speed_var.get()
+            launch_angle = self.launch_angle_var.get()
+            
+            # 计算总质量
+            total_weight = w_front + w_mid + w_rear
+            
+            # 优化重心计算 - 考虑鼻锥和分段质量分布
+            # 假设质量分布更加均匀
+            front_position = nose_length / 2  # 鼻锥质量集中在鼻锥中部
+            mid_position = nose_length + (L - nose_length) * 0.5  # 中部质量均匀分布
+            rear_position = L * 0.85  # 后部质量集中在后段
+            
+            # 计算重心位置
+            cg = (w_front * front_position + w_mid * mid_position + w_rear * rear_position) / total_weight
+            
+            # 计算压力中心 (改进模型)
+            # 考虑鼻锥形状的影响
+            nose_shape_factor = self.get_nose_shape_factor(nose_shape)
+            
+            # 计算尾翼参数
+            wing_position = L * (self.wing_position_var.get() / 100)
+            wing_count = self.wing_count_var.get()
+            root_chord_cm = self.root_chord_var.get() / 100  # 转米
+            tip_chord_cm = self.tip_chord_var.get() / 100    # 转米
+            wing_span_cm = self.wing_span_var.get() / 100    # 转米
+            
+            # 计算尾翼面积
+            if self.wing_shape_var.get() == "梯形":
+                wing_area = (root_chord_cm + tip_chord_cm) * wing_span_cm / 2
+            elif self.wing_shape_var.get() == "三角形":
+                wing_area = root_chord_cm * wing_span_cm / 2
+            elif self.wing_shape_var.get() == "矩形":
+                wing_area = root_chord_cm * wing_span_cm
+            else:
+                # 近似为梯形
+                wing_area = (root_chord_cm + tip_chord_cm) * wing_span_cm / 2
+            
+            total_wing_area = wing_area * wing_count
+            
+            # 计算火箭体侧面积
+            body_length = L - nose_length
+            body_side_area = np.pi * D * body_length
+            
+            # 计算鼻锥压力中心
+            nose_cp_distance = nose_length * nose_shape_factor
+            
+            # 计算箭体压力中心
+            body_cp_distance = nose_length + body_length * 0.5
+            
+            # 计算尾翼压力中心
+            wing_cp_distance = wing_position + root_chord_cm * 0.25  # 假设压力中心在弦长的25%处
+            
+            # 计算综合压力中心 (面积加权平均)
+            total_area = nose_length * D + body_side_area + total_wing_area
+            
+            # 简化计算
+            if total_area > 0:
+                cp = (nose_length * D * nose_cp_distance + 
+                      body_side_area * body_cp_distance + 
+                      total_wing_area * wing_cp_distance) / total_area
+            else:
+                cp = L * 0.6  # 默认值
+            
+            # 确保压力中心在重心之后
+            if cp <= cg:
+                cp = cg + D * 1.5  # 确保至少1.5倍直径的稳定性裕度
+            
+            # 计算稳定性裕度 (更精确的计算)
+            stability_margin_cal = (cp - cg) / D  # 以火箭直径为单位
+            
+            # 计算稳定性裕度百分比
+            stability_margin_percent = (cp - cg) / L * 100
+            
+            # 计算风偏角 (改进模型)
+            air_density = 1.225  # kg/m³
+            cross_area = np.pi * (D/2)**2
+            
+            # 计算动压
+            dynamic_pressure = 0.5 * air_density * wind_speed**2
+            
+            # 计算侧向力
+            side_force = dynamic_pressure * cross_area * 1.2  # 假设阻力系数1.2
+            
+            # 计算侧向力矩
+            side_moment = side_force * (cp - cg)
+            
+            # 计算恢复力矩 (重力矩)
+            g = 9.81  # m/s²
+            weight_force = total_weight * g
+            tilt_angle_rad = np.radians(5)  # 假设5度倾斜
+            restoring_moment = weight_force * (cp - cg) * np.sin(tilt_angle_rad)
+            
+            # 计算稳定性比率
+            if side_moment > 0:
+                stability_ratio = restoring_moment / side_moment
+            else:
+                stability_ratio = 999  # 极大值
+            
+            # 获取尾翼尺寸（厘米）
+            root_chord_cm_display = self.root_chord_var.get()
+            tip_chord_cm_display = self.tip_chord_var.get()
+            wing_span_cm_display = self.wing_span_var.get()
+            
+            # 显示结果（使用厘米单位）
+            self.result_text.delete(1.0, tk.END)
+            self.result_text.insert(tk.END, f"=== 火箭稳定性分析报告 ===\n\n")
+            self.result_text.insert(tk.END, f"【基本参数】\n")
+            self.result_text.insert(tk.END, f"火箭总长: {L*100:.1f} cm\n")
+            self.result_text.insert(tk.END, f"火箭直径: {D*100:.1f} cm\n")
+            self.result_text.insert(tk.END, f"鼻锥长度: {nose_length*100:.1f} cm\n")
+            self.result_text.insert(tk.END, f"鼻锥形状: {nose_shape}\n")
+            self.result_text.insert(tk.END, f"总质量: {total_weight:.2f} kg\n\n")
+            
+            self.result_text.insert(tk.END, f"【重心与压力中心】\n")
+            self.result_text.insert(tk.END, f"重心位置: {cg*100:.1f} cm (距鼻锥顶端)\n")
+            self.result_text.insert(tk.END, f"压力中心: {cp*100:.1f} cm (距鼻锥顶端)\n")
+            self.result_text.insert(tk.END, f"重心与压力中心距离: {(cp-cg)*100:.1f} cm\n\n")
+            
+            self.result_text.insert(tk.END, f"【稳定性分析】\n")
+            self.result_text.insert(tk.END, f"稳定性裕度: {stability_margin_cal:.2f} 倍直径\n")
+            self.result_text.insert(tk.END, f"稳定性裕度百分比: {stability_margin_percent:.1f}%\n")
+            
+            # 详细稳定性评估
+            self.result_text.insert(tk.END, f"\n【稳定性评估】\n")
+            if stability_margin_cal < 1.0:
+                self.result_text.insert(tk.END, f"⚠️ 警告: 稳定性严重不足! 火箭很可能失控\n")
+                self.result_text.insert(tk.END, f"   建议: 增加尾翼面积或向前移动重心\n")
+            elif stability_margin_cal < 1.5:
+                self.result_text.insert(tk.END, f"⚠️ 注意: 稳定性较低\n")
+                self.result_text.insert(tk.END, f"   建议: 适当增加尾翼尺寸或调整重心\n")
+            elif stability_margin_cal < 2.0:
+                self.result_text.insert(tk.END, f"✓ 稳定性良好\n")
+                self.result_text.insert(tk.END, f"   火箭飞行稳定\n")
+            else:
+                self.result_text.insert(tk.END, f"✓ 稳定性优秀\n")
+                self.result_text.insert(tk.END, f"   火箭飞行非常稳定\n")
+            
+            self.result_text.insert(tk.END, f"\n【风偏影响分析】\n")
+            self.result_text.insert(tk.END, f"风速: {wind_speed:.1f} m/s\n")
+            self.result_text.insert(tk.END, f"侧向力矩: {side_moment:.2f} N·m\n")
+            self.result_text.insert(tk.END, f"恢复力矩: {restoring_moment:.2f} N·m\n")
+            self.result_text.insert(tk.END, f"稳定性比率: {stability_ratio:.2f}\n")
+            
+            if stability_ratio > 3.0:
+                self.result_text.insert(tk.END, f"   抗风能力: 优秀\n")
+            elif stability_ratio > 1.5:
+                self.result_text.insert(tk.END, f"   抗风能力: 良好\n")
+            else:
+                self.result_text.insert(tk.END, f"   抗风能力: 较弱\n")
+            
+            self.result_text.insert(tk.END, f"\n【尾翼参数】\n")
+            self.result_text.insert(tk.END, f"尾翼形状: {self.wing_shape_var.get()}\n")
+            self.result_text.insert(tk.END, f"尾翼数量: {wing_count}片\n")
+            self.result_text.insert(tk.END, f"单翼面积: {wing_area*10000:.1f} cm²\n")
+            self.result_text.insert(tk.END, f"总翼面积: {total_wing_area*10000:.1f} cm²\n")
+            self.result_text.insert(tk.END, f"翼面积与箭体侧面积比: {total_wing_area/body_side_area:.3f}\n")
+            self.result_text.insert(tk.END, f"推荐尾翼位置: {L*0.7*100:.1f} - {L*0.85*100:.1f} cm\n")
+            self.result_text.insert(tk.END, f"实际安装位置: {wing_position*100:.1f} cm\n")
+            self.result_text.insert(tk.END, f"根部弦长: {root_chord_cm_display:.1f} cm\n")
+            self.result_text.insert(tk.END, f"尖部弦长: {tip_chord_cm_display:.1f} cm\n")
+            self.result_text.insert(tk.END, f"翼展: {wing_span_cm_display:.1f} cm\n")
+            
+            # 尾翼建议
+            self.result_text.insert(tk.END, f"\n【设计建议】\n")
+            if total_wing_area/body_side_area < 0.05:
+                self.result_text.insert(tk.END, f"建议: 增加尾翼面积，当前面积偏小\n")
+            elif total_wing_area/body_side_area > 0.15:
+                self.result_text.insert(tk.END, f"建议: 尾翼面积足够，可考虑优化形状\n")
+            else:
+                self.result_text.insert(tk.END, f"建议: 尾翼面积适中\n")
+            
+            # 更新尾翼示意图
+            self.draw_wing()
+            
+            # 自动计算最大高度
+            if hasattr(self, 'calculated_max_height'):
+                self.height_result_label.config(text=f"最大高度: {self.calculated_max_height:.2f} m")
+            
+        except Exception as e:
+            messagebox.showerror("计算错误", f"发生错误: {str(e)}")
+    
+    def get_nose_shape_factor(self, nose_shape):
+        """获取鼻锥形状因子"""
+        factors = {
+            "锥形": 0.66,      # 圆锥形鼻锥的压力中心在2/3处
+            "抛物线形": 0.50,  # 抛物线形鼻锥的压力中心在1/2处
+            "半球形": 0.42,    # 半球形鼻锥的压力中心在0.42处
+            "尖锥形": 0.75,    # 尖锥形鼻锥的压力中心在3/4处
+            "椭圆形": 0.44     # 椭圆形鼻锥的压力中心在0.44处
+        }
+        return factors.get(nose_shape, 0.66)
+    
+    def draw_wing(self):
+        # 清除画布
+        self.wing_canvas.delete("all")
+        
+        # 获取尾翼参数（厘米）
+        root_chord = self.root_chord_var.get() * 2  # 缩放以便显示
+        tip_chord = self.tip_chord_var.get() * 2
+        wing_span = self.wing_span_var.get() * 1.5
+        shape = self.wing_shape_var.get()
+        
+        # 中心位置
+        center_x, center_y = 150, 100
+        
+        # 根据形状绘制
+        if shape == "矩形":
+            points = [
+                center_x - root_chord/2, center_y - wing_span/2,
+                center_x + root_chord/2, center_y - wing_span/2,
+                center_x + root_chord/2, center_y + wing_span/2,
+                center_x - root_chord/2, center_y + wing_span/2
+            ]
+            self.wing_canvas.create_polygon(points, fill="lightblue", outline="black", width=2)
+        
+        elif shape == "梯形":
+            points = [
+                center_x - root_chord/2, center_y - wing_span/2,
+                center_x + root_chord/2, center_y - wing_span/2,
+                center_x + tip_chord/2, center_y + wing_span/2,
+                center_x - tip_chord/2, center_y + wing_span/2
+            ]
+            self.wing_canvas.create_polygon(points, fill="lightgreen", outline="black", width=2)
+        
+        elif shape == "三角形":
+            points = [
+                center_x, center_y - wing_span/2,
+                center_x + root_chord/2, center_y + wing_span/2,
+                center_x - root_chord/2, center_y + wing_span/2
+            ]
+            self.wing_canvas.create_polygon(points, fill="lightyellow", outline="black", width=2)
+        
+        elif shape == "椭圆":
+            self.wing_canvas.create_oval(
+                center_x - root_chord/2, center_y - wing_span/2,
+                center_x + root_chord/2, center_y + wing_span/2,
+                fill="lightpink", outline="black", width=2
+            )
+        
+        elif shape == "后掠":
+            points = [
+                center_x - root_chord/2, center_y - wing_span/2,
+                center_x + root_chord/3, center_y - wing_span/2,
+                center_x + tip_chord/2, center_y + wing_span/2,
+                center_x - tip_chord/1.5, center_y + wing_span/2
+            ]
+            self.wing_canvas.create_polygon(points, fill="lightcyan", outline="black", width=2)
+        
+        # 添加标签
+        self.wing_canvas.create_text(center_x, center_y - wing_span/2 - 25, 
+                                   text=f"{self.wing_count_var.get()}片 {shape}尾翼",
+                                   font=("Arial", 11, "bold"))
+        
+        # 添加尺寸标注
+        self.wing_canvas.create_line(center_x - root_chord/2, center_y - wing_span/2 - 10,
+                                   center_x + root_chord/2, center_y - wing_span/2 - 10,
+                                   fill="red", width=2)
+        self.wing_canvas.create_text(center_x, center_y - wing_span/2 - 20, 
+                                   text=f"根弦: {self.root_chord_var.get()}cm",
+                                   font=("Arial", 9), fill="red")
+        
+        self.wing_canvas.create_line(center_x - root_chord/2 - 10, center_y - wing_span/2,
+                                   center_x - root_chord/2 - 10, center_y + wing_span/2,
+                                   fill="blue", width=2)
+        self.wing_canvas.create_text(center_x - root_chord/2 - 20, center_y, 
+                                   text=f"翼展: {self.wing_span_var.get()}cm",
+                                   font=("Arial", 9), fill="blue", angle=90)
+    
+    def export_dxf(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".dxf",
+            filetypes=[("DXF 文件", "*.dxf"), ("所有文件", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # 创建DXF文件
+            dwg = dxf.drawing(file_path)
+            
+            # 获取尾翼参数（厘米）
+            shape = self.wing_shape_var.get()
+            count = self.wing_count_var.get()
+            root_chord = self.root_chord_var.get()
+            tip_chord = self.tip_chord_var.get()
+            wing_span = self.wing_span_var.get()
+            
+            # 添加尾翼形状（使用厘米单位）
+            if shape == "矩形":
+                points = [
+                    (0, 0),
+                    (root_chord, 0),
+                    (root_chord, wing_span),
+                    (0, wing_span),
+                    (0, 0)
+                ]
+                dwg.add(dxf.polyline(points, layer='WING'))
+            
+            elif shape == "梯形":
+                points = [
+                    (0, 0),
+                    (root_chord, 0),
+                    (root_chord - (root_chord - tip_chord)/2, wing_span),
+                    ((root_chord - tip_chord)/2, wing_span),
+                    (0, 0)
+                ]
+                dwg.add(dxf.polyline(points, layer='WING'))
+            
+            elif shape == "三角形":
+                points = [
+                    (root_chord/2, 0),
+                    (root_chord, wing_span),
+                    (0, wing_span),
+                    (root_chord/2, 0)
+                ]
+                dwg.add(dxf.polyline(points, layer='WING'))
+            
+            # 保存文件
+            dwg.save()
+            messagebox.showinfo("导出成功", f"尾翼设计已保存为 DXF 文件:\n{file_path}")
+            
+        except Exception as e:
+            messagebox.showerror("导出错误", f"无法保存 DXF 文件: {str(e)}")
+    
+    def reset_parameters(self):
+        # 重置所有输入变量
+        self.length_var.set(500.0)  # 厘米
+        self.diameter_var.set(20.0)  # 厘米
+        self.nose_length_var.set(80.0)  # 厘米
+        self.nose_shape_var.set("锥形")
+        self.front_weight_var.set(10000.0)  # 克
+        self.mid_weight_var.set(20000.0)    # 克
+        self.rear_weight_var.set(15000.0)   # 克
+        self.wind_speed_var.set(5.0)
+        self.launch_angle_var.set(45.0)
+        self.target_altitude_var.set(1000.0)
+        self.wing_shape_var.set("梯形")
+        self.wing_count_var.set(4)
+        self.root_chord_var.set(30.0)  # 厘米
+        self.tip_chord_var.set(15.0)   # 厘米
+        self.wing_span_var.set(40.0)   # 厘米
+        self.wing_position_var.set(80.0)
+        
+        # 重置最大高度参数
+        self.water_velocity_var.set(30.0)
+        self.drag_coeff_var.set(0.75)
+        self.air_density_var.set(1.225)
+        self.cross_area_var.set(0.0314)
+        self.initial_mass_var.set(45.0)
+        self.final_mass_var.set(25.0)
+        self.gravity_var.set(9.81)
+        
+        # 清除结果
+        self.result_text.delete(1.0, tk.END)
+        self.result_text.insert(tk.END, "参数已重置，请重新计算...")
+        
+        # 重置高度结果
+        self.height_result_label.config(text="最大高度: 未计算")
+        if hasattr(self, 'calculated_max_height'):
+            del self.calculated_max_height
+        
+        # 重绘图
+        self.draw_wing()
+
+# 主程序
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = RocketStabilityCalculator(root)
+    root.mainloop()
